@@ -1,5 +1,5 @@
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,7 +11,10 @@ import DocumentsList from "@/components/DocumentsList";
 import ChatInterface from "@/components/ChatInterface";
 import FileUploadZone from "@/components/FileUploadZone";
 import ApiKeyInput from "@/components/ApiKeyInput";
-import { FileDocument, ChatMessage } from "@/types";
+import { FileDocument, ChatMessage, ElevenLabsResponse, ElevenLabsChatResponse } from "@/types";
+
+const ELEVEN_LABS_API = "https://api.elevenlabs.io/v1";
+const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Default voice ID (Rachel voice)
 
 const Index = () => {
   const { toast } = useToast();
@@ -20,15 +23,65 @@ const Index = () => {
   const [apiKey, setApiKey] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
   const [isApiKeySet, setIsApiKeySet] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    // Check if API key is stored in localStorage on component mount
+    const storedApiKey = localStorage.getItem("elevenlabs_api_key");
+    if (storedApiKey) {
+      setApiKey(storedApiKey);
+      setIsApiKeySet(true);
+      // Fetch existing documents if API key is available
+      fetchDocuments(storedApiKey);
+    }
+  }, []);
+
+  const fetchDocuments = async (key: string) => {
+    try {
+      const response = await fetch(`${ELEVEN_LABS_API}/convai/knowledgebase/documents`, {
+        method: "GET",
+        headers: {
+          "xi-api-key": key,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.documents && Array.isArray(data.documents)) {
+        const formattedDocs: FileDocument[] = data.documents.map((doc: any) => ({
+          id: doc.document_id,
+          name: doc.document_name || "Unknown Document",
+          size: doc.document_size || 0,
+          type: doc.document_type || "application/octet-stream",
+          uploadDate: doc.upload_date || new Date().toISOString()
+        }));
+        
+        setDocuments(formattedDocs);
+      }
+    } catch (error) {
+      console.error("Failed to fetch documents:", error);
+      toast({
+        title: "Failed to Load Documents",
+        description: "Could not retrieve your existing documents.",
+        variant: "destructive"
+      });
+    }
+  };
 
   const handleApiKeySubmit = (key: string) => {
     setApiKey(key);
     setIsApiKeySet(true);
     toast({
       title: "API Key Set",
-      description: "Your API key has been securely stored for this session."
+      description: "Your API key has been securely stored."
     });
-    // In a real app, we would validate the API key here
+    
+    // Fetch documents when API key is set
+    fetchDocuments(key);
   };
 
   const handleFileUpload = async (files: File[]) => {
@@ -43,44 +96,63 @@ const Index = () => {
 
     setIsUploading(true);
     
-    // Simulate file upload and processing
     try {
-      // In a real implementation, we would upload files to ElevenLabs knowledge base here
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const uploadedDocs: FileDocument[] = [];
       
-      const newDocuments = files.map((file, index) => ({
-        id: `doc_${Date.now()}_${index}`,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        uploadDate: new Date().toISOString()
-      }));
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append("file", file);
+        
+        const response = await fetch(`${ELEVEN_LABS_API}/convai/knowledgebase/documents`, {
+          method: "POST",
+          headers: {
+            "xi-api-key": apiKey,
+          },
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to upload ${file.name}`);
+        }
+
+        const result: ElevenLabsResponse = await response.json();
+        
+        if (result.success && result.document_id) {
+          uploadedDocs.push({
+            id: result.document_id,
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            uploadDate: new Date().toISOString()
+          });
+        }
+      }
       
-      setDocuments(prev => [...prev, ...newDocuments]);
+      setDocuments(prev => [...prev, ...uploadedDocs]);
       
       toast({
         title: "Files Uploaded",
-        description: `Successfully uploaded ${files.length} file(s).`,
+        description: `Successfully uploaded ${uploadedDocs.length} file(s).`,
       });
       
       // Add a system message indicating files were added
-      if (newDocuments.length > 0) {
+      if (uploadedDocs.length > 0) {
         setMessages(prev => [
           ...prev,
           {
             id: Date.now().toString(),
             role: "system",
-            content: `${newDocuments.length} new document(s) added to the knowledge base: ${newDocuments.map(doc => doc.name).join(", ")}`
+            content: `${uploadedDocs.length} new document(s) added to the knowledge base: ${uploadedDocs.map(doc => doc.name).join(", ")}`
           }
         ]);
       }
     } catch (error) {
+      console.error("Upload error:", error);
       toast({
         title: "Upload Failed",
         description: "There was an error uploading your files.",
         variant: "destructive"
       });
-      console.error("Upload error:", error);
     } finally {
       setIsUploading(false);
     }
@@ -104,6 +176,14 @@ const Index = () => {
       });
       return;
     }
+
+    if (isProcessing) {
+      toast({
+        title: "Processing",
+        description: "Please wait while we process your previous message.",
+      });
+      return;
+    }
     
     // Add user message
     const userMessageId = Date.now().toString();
@@ -116,36 +196,71 @@ const Index = () => {
       }
     ]);
     
-    // In a real implementation, we would send the message to the ElevenLabs API
+    setIsProcessing(true);
+    
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Simulate AI response
-      const aiResponse = `This is a simulated response about the documents you've uploaded. In a real implementation, I would use the ElevenLabs API to generate a response based on your documents' content. You could ask specific questions about your ${documents.length} uploaded document(s).`;
+      const response = await fetch(`${ELEVEN_LABS_API}/convai/knowledgebase/chat`, {
+        method: "POST",
+        headers: {
+          "xi-api-key": apiKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          text: message,
+          voice_id: DEFAULT_VOICE_ID,
+          model_id: "eleven_multilingual_v2"
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result: ElevenLabsChatResponse = await response.json();
       
       setMessages(prev => [
         ...prev,
         {
-          id: (Date.now() + 1).toString(),
+          id: result.generation_id || (Date.now() + 1).toString(),
           role: "assistant",
-          content: aiResponse
+          content: result.text
         }
       ]);
     } catch (error) {
+      console.error("Message error:", error);
       toast({
         title: "Message Error",
         description: "Failed to get a response from the AI.",
         variant: "destructive"
       });
-      console.error("Message error:", error);
+      
+      // Add error message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: "system",
+          content: "Failed to get a response from the AI. Please try again."
+        }
+      ]);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleDocumentDelete = async (documentId: string) => {
-    // In a real implementation, we would delete the document from the ElevenLabs knowledge base
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+      const response = await fetch(`${ELEVEN_LABS_API}/convai/knowledgebase/documents/${documentId}`, {
+        method: "DELETE",
+        headers: {
+          "xi-api-key": apiKey
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       setDocuments(prev => prev.filter(doc => doc.id !== documentId));
       
       toast({
@@ -166,12 +281,12 @@ const Index = () => {
         ]);
       }
     } catch (error) {
+      console.error("Delete error:", error);
       toast({
         title: "Deletion Failed",
         description: "There was an error removing your document.",
         variant: "destructive"
       });
-      console.error("Delete error:", error);
     }
   };
 
@@ -181,19 +296,10 @@ const Index = () => {
       <header className="bg-slate-800 text-white p-4 shadow-md">
         <div className="container mx-auto flex justify-between items-center">
           <h1 className="text-xl font-bold">FileChatSage</h1>
-          {!isApiKeySet && (
-            <ApiKeyInput onSubmit={handleApiKeySubmit} />
-          )}
-          {isApiKeySet && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => setIsApiKeySet(false)}
-              className="text-slate-200 border-slate-600 hover:bg-slate-700"
-            >
-              Change API Key
-            </Button>
-          )}
+          <ApiKeyInput 
+            onSubmit={handleApiKeySubmit} 
+            defaultApiKey={apiKey}
+          />
         </div>
       </header>
       

@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,15 +15,27 @@ import { Key } from "lucide-react";
 
 interface ApiKeyInputProps {
   onSubmit: (apiKey: string) => void;
+  defaultApiKey?: string;
 }
 
-const ApiKeyInput = ({ onSubmit }: ApiKeyInputProps) => {
-  const [apiKey, setApiKey] = useState("");
+const ApiKeyInput = ({ onSubmit, defaultApiKey }: ApiKeyInputProps) => {
+  const [apiKey, setApiKey] = useState(defaultApiKey || "");
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    // Check if API key is stored in localStorage
+    const storedApiKey = localStorage.getItem("elevenlabs_api_key");
+    if (storedApiKey && !defaultApiKey) {
+      setApiKey(storedApiKey);
+      onSubmit(storedApiKey);
+    }
+  }, [defaultApiKey, onSubmit]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (apiKey.trim()) {
+      // Store API key in localStorage for persistence
+      localStorage.setItem("elevenlabs_api_key", apiKey.trim());
       onSubmit(apiKey.trim());
       setOpen(false);
     }
@@ -34,7 +46,7 @@ const ApiKeyInput = ({ onSubmit }: ApiKeyInputProps) => {
       <DialogTrigger asChild>
         <Button variant="outline" className="text-slate-200 border-slate-600 hover:bg-slate-700">
           <Key className="mr-2 h-4 w-4" />
-          Set API Key
+          {localStorage.getItem("elevenlabs_api_key") ? "Change API Key" : "Set API Key"}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
@@ -42,7 +54,7 @@ const ApiKeyInput = ({ onSubmit }: ApiKeyInputProps) => {
           <DialogTitle>ElevenLabs API Key</DialogTitle>
           <DialogDescription>
             To use the ElevenLabs AI voice agent, you need to provide your API key.
-            This key will only be stored in your browser for this session.
+            This key will be stored locally in your browser.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
