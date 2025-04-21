@@ -1,5 +1,4 @@
-
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,9 +10,9 @@ import DocumentsList from "@/components/DocumentsList";
 import ChatInterface from "@/components/ChatInterface";
 import FileUploadZone from "@/components/FileUploadZone";
 import ApiKeyInput from "@/components/ApiKeyInput";
-import { FileDocument, ChatMessage, ElevenLabsResponse, ElevenLabsChatResponse } from "@/types";
+import { FileDocument, ChatMessage } from "@/types";
+import { initializeKnowledgeBase, fetchDocuments, uploadDocument, deleteDocument } from "@/utils/elevenlabs";
 
-const ELEVEN_LABS_API = "https://api.elevenlabs.io/v1";
 const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Default voice ID (Rachel voice)
 
 const Index = () => {
@@ -24,6 +23,7 @@ const Index = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isApiKeySet, setIsApiKeySet] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [knowledgeBaseId, setKnowledgeBaseId] = useState<string>("");
 
   useEffect(() => {
     // Check if API key is stored in localStorage on component mount
@@ -31,48 +31,38 @@ const Index = () => {
     if (storedApiKey) {
       setApiKey(storedApiKey);
       setIsApiKeySet(true);
-      // Fetch existing documents if API key is available
-      fetchDocuments(storedApiKey);
+      initializeKnowledgeBaseAndFetchDocs(storedApiKey);
     }
   }, []);
 
-  const fetchDocuments = async (key: string) => {
+  const initializeKnowledgeBaseAndFetchDocs = async (key: string) => {
     try {
-      const response = await fetch(`${ELEVEN_LABS_API}/convai/knowledgebase/documents`, {
-        method: "GET",
-        headers: {
-          "xi-api-key": key,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.documents && Array.isArray(data.documents)) {
-        const formattedDocs: FileDocument[] = data.documents.map((doc: any) => ({
-          id: doc.document_id,
-          name: doc.document_name || "Unknown Document",
-          size: doc.document_size || 0,
-          type: doc.document_type || "application/octet-stream",
+      const kb = await initializeKnowledgeBase(key);
+      setKnowledgeBaseId(kb.knowledge_base_id);
+      
+      const docsData = await fetchDocuments(key, kb.knowledge_base_id);
+      if (docsData.documents) {
+        const formattedDocs: FileDocument[] = docsData.documents.map((doc: any) => ({
+          id: doc.id,
+          name: doc.name || "Unknown Document",
+          size: doc.size || 0,
+          type: doc.type || "application/octet-stream",
           uploadDate: doc.upload_date || new Date().toISOString()
         }));
         
         setDocuments(formattedDocs);
       }
     } catch (error) {
-      console.error("Failed to fetch documents:", error);
+      console.error("Failed to initialize knowledge base:", error);
       toast({
-        title: "Failed to Load Documents",
-        description: "Could not retrieve your existing documents.",
+        title: "Error",
+        description: "Failed to initialize knowledge base. Please try again.",
         variant: "destructive"
       });
     }
   };
 
-  const handleApiKeySubmit = (key: string) => {
+  const handleApiKeySubmit = async (key: string) => {
     setApiKey(key);
     setIsApiKeySet(true);
     toast({
@@ -80,14 +70,13 @@ const Index = () => {
       description: "Your API key has been securely stored."
     });
     
-    // Fetch documents when API key is set
-    fetchDocuments(key);
+    await initializeKnowledgeBaseAndFetchDocs(key);
   };
 
   const handleFileUpload = async (files: File[]) => {
-    if (!isApiKeySet) {
+    if (!isApiKeySet || !knowledgeBaseId) {
       toast({
-        title: "API Key Required",
+        title: "Error",
         description: "Please set your ElevenLabs API key first.",
         variant: "destructive"
       });
@@ -100,24 +89,9 @@ const Index = () => {
       const uploadedDocs: FileDocument[] = [];
       
       for (const file of files) {
-        const formData = new FormData();
-        formData.append("file", file);
+        const result = await uploadDocument(apiKey, knowledgeBaseId, file);
         
-        const response = await fetch(`${ELEVEN_LABS_API}/convai/knowledgebase/documents`, {
-          method: "POST",
-          headers: {
-            "xi-api-key": apiKey,
-          },
-          body: formData
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to upload ${file.name}`);
-        }
-
-        const result: ElevenLabsResponse = await response.json();
-        
-        if (result.success && result.document_id) {
+        if (result.document_id) {
           uploadedDocs.push({
             id: result.document_id,
             name: file.name,
@@ -135,7 +109,6 @@ const Index = () => {
         description: `Successfully uploaded ${uploadedDocs.length} file(s).`,
       });
       
-      // Add a system message indicating files were added
       if (uploadedDocs.length > 0) {
         setMessages(prev => [
           ...prev,
@@ -155,6 +128,40 @@ const Index = () => {
       });
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleDocumentDelete = async (documentId: string) => {
+    if (!knowledgeBaseId) return;
+
+    try {
+      await deleteDocument(apiKey, knowledgeBaseId, documentId);
+      
+      setDocuments(prev => prev.filter(doc => doc.id !== documentId));
+      
+      toast({
+        title: "Document Deleted",
+        description: "Document successfully removed from your knowledge base.",
+      });
+      
+      const deletedDoc = documents.find(doc => doc.id === documentId);
+      if (deletedDoc) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: "system",
+            content: `Document removed from knowledge base: ${deletedDoc.name}`
+          }
+        ]);
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+      toast({
+        title: "Deletion Failed",
+        description: "There was an error removing your document.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -245,48 +252,6 @@ const Index = () => {
       ]);
     } finally {
       setIsProcessing(false);
-    }
-  };
-
-  const handleDocumentDelete = async (documentId: string) => {
-    try {
-      const response = await fetch(`${ELEVEN_LABS_API}/convai/knowledgebase/documents/${documentId}`, {
-        method: "DELETE",
-        headers: {
-          "xi-api-key": apiKey
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      setDocuments(prev => prev.filter(doc => doc.id !== documentId));
-      
-      toast({
-        title: "Document Deleted",
-        description: "Document successfully removed from your knowledge base.",
-      });
-      
-      // Add a system message indicating the file was removed
-      const deletedDoc = documents.find(doc => doc.id === documentId);
-      if (deletedDoc) {
-        setMessages(prev => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: "system",
-            content: `Document removed from knowledge base: ${deletedDoc.name}`
-          }
-        ]);
-      }
-    } catch (error) {
-      console.error("Delete error:", error);
-      toast({
-        title: "Deletion Failed",
-        description: "There was an error removing your document.",
-        variant: "destructive"
-      });
     }
   };
 
