@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -10,7 +11,7 @@ import DocumentsList from "@/components/DocumentsList";
 import ChatInterface from "@/components/ChatInterface";
 import FileUploadZone from "@/components/FileUploadZone";
 import ApiKeyInput from "@/components/ApiKeyInput";
-import { FileDocument, ChatMessage } from "@/types";
+import { FileDocument, ChatMessage, ElevenLabsChatResponse } from "@/types";
 import { initializeKnowledgeBase, fetchDocuments, uploadDocument, deleteDocument } from "@/utils/elevenlabs";
 
 const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Default voice ID (Rachel voice)
