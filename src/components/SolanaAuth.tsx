@@ -3,14 +3,14 @@ import React from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton, WalletDisconnectButton } from '@solana/wallet-adapter-react-ui';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Wallet, LogOut } from 'lucide-react';
+import { Wallet } from 'lucide-react';
 
 interface SolanaAuthProps {
   onAuthenticated?: (publicKey: string) => void;
 }
 
 const SolanaAuth = ({ onAuthenticated }: SolanaAuthProps) => {
-  const { connected, publicKey, disconnect } = useWallet();
+  const { connected, publicKey } = useWallet();
 
   React.useEffect(() => {
     if (connected && publicKey && onAuthenticated) {
@@ -58,7 +58,6 @@ const SolanaAuth = ({ onAuthenticated }: SolanaAuthProps) => {
           <ul className="list-disc list-inside mt-1">
             <li>Phantom</li>
             <li>Solflare</li>
-            <li>Sollet</li>
             <li>Torus</li>
           </ul>
         </div>

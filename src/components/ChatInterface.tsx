@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Send, Bot, User as UserIcon, Settings } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 import { useToast } from "@/hooks/use-toast";
+import { ChatMessage } from "@/types";
 
 interface Message {
   id: string;
@@ -22,10 +23,13 @@ interface Message {
 }
 
 interface ChatInterfaceProps {
-  user: User;
+  user?: User;
+  messages?: ChatMessage[];
+  onSendMessage?: (message: string) => Promise<void>;
+  isReady?: boolean;
 }
 
-const ChatInterface = ({ user }: ChatInterfaceProps) => {
+const ChatInterface = ({ user, messages: externalMessages, onSendMessage: externalOnSendMessage, isReady }: ChatInterfaceProps) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
@@ -63,52 +67,57 @@ const ChatInterface = ({ user }: ChatInterfaceProps) => {
     setIsProcessing(true);
 
     try {
-      // Check if the message requests tool execution
-      const shouldExecuteTool = input.toLowerCase().includes("resume") || 
-                               input.toLowerCase().includes("job") ||
-                               input.toLowerCase().includes("update");
-
-      if (shouldExecuteTool) {
-        // Add tool execution message
-        const toolMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: "I'll help you update your resumes. Let me execute the UpdateResumeForJobs tool...",
-          timestamp: new Date(),
-          toolExecution: {
-            name: "UpdateResumeForJobs",
-            status: "running",
-          },
-        };
-        setMessages(prev => [...prev, toolMessage]);
-
-        // Simulate tool execution (this would call the actual edge function)
-        setTimeout(() => {
-          const completedToolMessage: Message = {
-            ...toolMessage,
-            content: "Successfully updated resumes for all open job postings! Generated 3 tailored PDFs and stored them in your resume library.",
-            toolExecution: {
-              name: "UpdateResumeForJobs",
-              status: "completed",
-              result: {
-                resumesGenerated: 3,
-                jobsProcessed: ["Software Engineer - TechCorp", "Full Stack Developer - StartupXYZ", "Senior Developer - BigTech"],
-              },
-            },
-          };
-          setMessages(prev => prev.map(msg => msg.id === toolMessage.id ? completedToolMessage : msg));
-        }, 3000);
+      // Use external onSendMessage if provided, otherwise use internal logic
+      if (externalOnSendMessage) {
+        await externalOnSendMessage(input);
       } else {
-        // Regular chat response
-        setTimeout(() => {
-          const assistantMessage: Message = {
+        // Check if the message requests tool execution
+        const shouldExecuteTool = input.toLowerCase().includes("resume") || 
+                                 input.toLowerCase().includes("job") ||
+                                 input.toLowerCase().includes("update");
+
+        if (shouldExecuteTool) {
+          // Add tool execution message
+          const toolMessage: Message = {
             id: (Date.now() + 1).toString(),
             role: "assistant",
-            content: `I understand you want to know about "${input}". I'm equipped with tools for resume automation, job application management, and more. Try asking me to "update my resumes" or "generate resumes for my job applications".`,
+            content: "I'll help you update your resumes. Let me execute the UpdateResumeForJobs tool...",
             timestamp: new Date(),
+            toolExecution: {
+              name: "UpdateResumeForJobs",
+              status: "running",
+            },
           };
-          setMessages(prev => [...prev, assistantMessage]);
-        }, 1000);
+          setMessages(prev => [...prev, toolMessage]);
+
+          // Simulate tool execution (this would call the actual edge function)
+          setTimeout(() => {
+            const completedToolMessage: Message = {
+              ...toolMessage,
+              content: "Successfully updated resumes for all open job postings! Generated 3 tailored PDFs and stored them in your resume library.",
+              toolExecution: {
+                name: "UpdateResumeForJobs",
+                status: "completed",
+                result: {
+                  resumesGenerated: 3,
+                  jobsProcessed: ["Software Engineer - TechCorp", "Full Stack Developer - StartupXYZ", "Senior Developer - BigTech"],
+                },
+              },
+            };
+            setMessages(prev => prev.map(msg => msg.id === toolMessage.id ? completedToolMessage : msg));
+          }, 3000);
+        } else {
+          // Regular chat response
+          setTimeout(() => {
+            const assistantMessage: Message = {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: `I understand you want to know about "${input}". I'm equipped with tools for resume automation, job application management, and more. Try asking me to "update my resumes" or "generate resumes for my job applications".`,
+              timestamp: new Date(),
+            };
+            setMessages(prev => [...prev, assistantMessage]);
+          }, 1000);
+        }
       }
     } catch (error) {
       console.error("Chat error:", error);
