@@ -1,35 +1,34 @@
 
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
+import { useWallet } from '@solana/wallet-adapter-react';
 import { useToast } from "@/hooks/use-toast";
 import ChatInterface from "@/components/ChatInterface";
 import ResumeManager from "@/components/ResumeManager";
 import ApiKeyManager from "@/components/ApiKeyManager";
-import { User } from "@supabase/supabase-js";
+import SolanaAuth from "@/components/SolanaAuth";
+import SolanaWalletProvider from "@/components/SolanaWalletProvider";
 
-const Dashboard = () => {
-  const [user, setUser] = useState<User | null>(null);
+const DashboardContent = () => {
+  const { connected, publicKey } = useWallet();
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    // Simulate loading check
+    const timer = setTimeout(() => {
       setLoading(false);
-    });
+    }, 1000);
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
+    return () => clearTimeout(timer);
   }, []);
+
+  const handleAuthenticated = (walletAddress: string) => {
+    toast({
+      title: "Wallet Connected",
+      description: `Successfully connected to ${walletAddress.slice(0, 8)}...${walletAddress.slice(-8)}`,
+    });
+  };
 
   if (loading) {
     return (
@@ -39,26 +38,23 @@ const Dashboard = () => {
     );
   }
 
-  if (!user) {
+  if (!connected || !publicKey) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Welcome to Personal Automation Dashboard</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-gray-600">Please sign in to continue</p>
-            <button
-              onClick={() => supabase.auth.signInWithOAuth({ provider: 'google' })}
-              className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-            >
-              Sign in with Google
-            </button>
-          </CardContent>
-        </Card>
+        <SolanaAuth onAuthenticated={handleAuthenticated} />
       </div>
     );
   }
+
+  // Create a user-like object from the wallet connection
+  const walletUser = {
+    id: publicKey.toString(),
+    email: `${publicKey.toString().slice(0, 8)}...@solana.wallet`,
+    user_metadata: {},
+    app_metadata: {},
+    aud: '',
+    created_at: new Date().toISOString(),
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -69,12 +65,14 @@ const Dashboard = () => {
               Personal Automation Dashboard
             </h1>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">{user.email}</span>
+              <span className="text-sm text-gray-600">
+                {publicKey.toString().slice(0, 8)}...{publicKey.toString().slice(-8)}
+              </span>
               <button
-                onClick={() => supabase.auth.signOut()}
+                onClick={() => window.location.reload()}
                 className="text-sm text-gray-600 hover:text-gray-800"
               >
-                Sign out
+                Disconnect
               </button>
             </div>
           </div>
@@ -90,19 +88,27 @@ const Dashboard = () => {
           </TabsList>
 
           <TabsContent value="chat">
-            <ChatInterface user={user} />
+            <ChatInterface user={walletUser as any} />
           </TabsContent>
 
           <TabsContent value="resumes">
-            <ResumeManager user={user} />
+            <ResumeManager user={walletUser as any} />
           </TabsContent>
 
           <TabsContent value="settings">
-            <ApiKeyManager user={user} />
+            <ApiKeyManager user={walletUser as any} />
           </TabsContent>
         </Tabs>
       </main>
     </div>
+  );
+};
+
+const Dashboard = () => {
+  return (
+    <SolanaWalletProvider>
+      <DashboardContent />
+    </SolanaWalletProvider>
   );
 };
 
