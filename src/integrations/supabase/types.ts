@@ -9,7 +9,57 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      api_keys: {
+        Row: {
+          created_at: string | null
+          id: number
+          key: string
+          last_pdf_generated: string | null
+          service_name: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: never
+          key: string
+          last_pdf_generated?: string | null
+          service_name: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: never
+          key?: string
+          last_pdf_generated?: string | null
+          service_name?: string
+        }
+        Relationships: []
+      }
+      resumes: {
+        Row: {
+          content: string | null
+          created_at: string | null
+          id: number
+          job_id: string
+          pdf_url: string
+          user_id: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string | null
+          id?: never
+          job_id: string
+          pdf_url: string
+          user_id: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string | null
+          id?: never
+          job_id?: string
+          pdf_url?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
