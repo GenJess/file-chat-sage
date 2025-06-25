@@ -10,17 +10,6 @@ import { User } from "@supabase/supabase-js";
 import { useToast } from "@/hooks/use-toast";
 import { ChatMessage } from "@/types";
 
-interface Message {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  timestamp: Date;
-  toolExecution?: {
-    name: string;
-    status: "running" | "completed" | "error";
-    result?: any;
-  };
-}
 
 interface ChatInterfaceProps {
   user?: User;
@@ -30,14 +19,7 @@ interface ChatInterfaceProps {
 }
 
 const ChatInterface = ({ user, messages: externalMessages, onSendMessage: externalOnSendMessage, isReady }: ChatInterfaceProps) => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      role: "system",
-      content: "Welcome to your Personal Automation Dashboard! I can help you execute tools like updating resumes, managing job applications, and more. Just ask!",
-      timestamp: new Date(),
-    },
-  ]);
+  const [localMessages, setLocalMessages] = useState<ChatMessage[]>(externalMessages || []);
   const [input, setInput] = useState("");
   const [selectedModel, setSelectedModel] = useState("gemini");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -52,72 +34,29 @@ const ChatInterface = ({ user, messages: externalMessages, onSendMessage: extern
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = async () => {
-    if (!input.trim() || isProcessing) return;
+  useEffect(() => {
+    if (externalMessages && externalMessages.length !== localMessages.length) {
+      setLocalMessages(externalMessages);
+    }
+  }, [externalMessages]);
 
-    const userMessage: Message = {
+  const handleSendMessage = async () => {
+    if (!input.trim() || isProcessing || !isReady) return;
+
+    const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: "user",
       content: input,
-      timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setLocalMessages(prev => [...prev, userMessage]);
     setInput("");
     setIsProcessing(true);
 
     try {
-      // Use external onSendMessage if provided, otherwise use internal logic
+      // Use external onSendMessage if provided
       if (externalOnSendMessage) {
         await externalOnSendMessage(input);
-      } else {
-        // Check if the message requests tool execution
-        const shouldExecuteTool = input.toLowerCase().includes("resume") || 
-                                 input.toLowerCase().includes("job") ||
-                                 input.toLowerCase().includes("update");
-
-        if (shouldExecuteTool) {
-          // Add tool execution message
-          const toolMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            role: "assistant",
-            content: "I'll help you update your resumes. Let me execute the UpdateResumeForJobs tool...",
-            timestamp: new Date(),
-            toolExecution: {
-              name: "UpdateResumeForJobs",
-              status: "running",
-            },
-          };
-          setMessages(prev => [...prev, toolMessage]);
-
-          // Simulate tool execution (this would call the actual edge function)
-          setTimeout(() => {
-            const completedToolMessage: Message = {
-              ...toolMessage,
-              content: "Successfully updated resumes for all open job postings! Generated 3 tailored PDFs and stored them in your resume library.",
-              toolExecution: {
-                name: "UpdateResumeForJobs",
-                status: "completed",
-                result: {
-                  resumesGenerated: 3,
-                  jobsProcessed: ["Software Engineer - TechCorp", "Full Stack Developer - StartupXYZ", "Senior Developer - BigTech"],
-                },
-              },
-            };
-            setMessages(prev => prev.map(msg => msg.id === toolMessage.id ? completedToolMessage : msg));
-          }, 3000);
-        } else {
-          // Regular chat response
-          setTimeout(() => {
-            const assistantMessage: Message = {
-              id: (Date.now() + 1).toString(),
-              role: "assistant",
-              content: `I understand you want to know about "${input}". I'm equipped with tools for resume automation, job application management, and more. Try asking me to "update my resumes" or "generate resumes for my job applications".`,
-              timestamp: new Date(),
-            };
-            setMessages(prev => [...prev, assistantMessage]);
-          }, 1000);
-        }
       }
     } catch (error) {
       console.error("Chat error:", error);
@@ -166,7 +105,7 @@ const ChatInterface = ({ user, messages: externalMessages, onSendMessage: extern
           <div className="space-y-4">
             {/* Messages */}
             <div className="h-96 overflow-y-auto space-y-4 border rounded-lg p-4 bg-gray-50">
-              {messages.map((message) => (
+{localMessages.map((message) => (
                 <div
                   key={message.id}
                   className={`flex items-start gap-3 ${
@@ -195,24 +134,9 @@ const ChatInterface = ({ user, messages: externalMessages, onSendMessage: extern
                         : "bg-white border"
                     }`}>
                       <p className="text-sm">{message.content}</p>
-                      {message.toolExecution && (
-                        <div className="mt-2 pt-2 border-t border-gray-200">
-                          <div className="flex items-center gap-2">
-                            <Badge variant={
-                              message.toolExecution.status === "running" ? "default" :
-                              message.toolExecution.status === "completed" ? "secondary" : "destructive"
-                            }>
-                              {message.toolExecution.name}
-                            </Badge>
-                            <span className="text-xs text-gray-500">
-                              {message.toolExecution.status}
-                            </span>
-                          </div>
-                        </div>
-                      )}
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
-                      {message.timestamp.toLocaleTimeString()}
+                      {new Date().toLocaleTimeString()}
                     </p>
                   </div>
                 </div>
@@ -238,25 +162,6 @@ const ChatInterface = ({ user, messages: externalMessages, onSendMessage: extern
               >
                 <Send className="w-4 h-4" />
               </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Tool Suggestions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Available Tools</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 border rounded-lg cursor-pointer hover:bg-gray-50" onClick={() => setInput("Update my resumes for all open job applications")}>
-              <h3 className="font-medium">Update Resumes</h3>
-              <p className="text-sm text-gray-600">Generate tailored resumes for Notion job postings</p>
-            </div>
-            <div className="p-4 border rounded-lg cursor-pointer hover:bg-gray-50" onClick={() => setInput("Show me my recent resume activity")}>
-              <h3 className="font-medium">Resume Analytics</h3>
-              <p className="text-sm text-gray-600">View resume generation history and metrics</p>
             </div>
           </div>
         </CardContent>
