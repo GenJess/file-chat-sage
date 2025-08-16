@@ -14,11 +14,12 @@ const Index = () => {
   const {
     documents,
     isUploading,
+    knowledgeBaseId,
     initializeKnowledgeBaseAndFetchDocs,
     handleFileUpload,
     handleDocumentDelete
   } = useDocuments(apiKey);
-  const { messages, isProcessing, handleMessageSubmit } = useChat(apiKey);
+  const { messages, isProcessing, handleMessageSubmit, addSystemMessage } = useChat(apiKey, knowledgeBaseId);
 
   useEffect(() => {
     if (apiKey) {
@@ -40,12 +41,7 @@ const Index = () => {
     
     if (uploadedDocs.length > 0) {
       // Add system message about uploaded documents
-      const systemMessage = {
-        id: Date.now().toString(),
-        role: "system" as const,
-        content: `${uploadedDocs.length} new document(s) added to the knowledge base: ${uploadedDocs.map(doc => doc.name).join(", ")}`
-      };
-      messages.push(systemMessage);
+      addSystemMessage(`${uploadedDocs.length} new document(s) added to the knowledge base: ${uploadedDocs.map(doc => doc.name).join(", ")}. You can now ask questions about these documents!`);
     }
   };
 
@@ -55,12 +51,7 @@ const Index = () => {
     
     if (result && deletedDoc) {
       // Add system message about deleted document
-      const systemMessage = {
-        id: Date.now().toString(),
-        role: "system" as const,
-        content: `Document removed from knowledge base: ${deletedDoc.name}`
-      };
-      messages.push(systemMessage);
+      addSystemMessage(`Document removed from knowledge base: ${deletedDoc.name}`);
     }
   };
 
